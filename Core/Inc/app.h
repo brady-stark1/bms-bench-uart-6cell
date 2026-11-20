@@ -1,0 +1,98 @@
+#ifndef APP_H
+#define APP_H
+
+#include <stdarg.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "Ams/ams_types.h"
+#include "Ams/bq79600_bridge.h"
+#include "FreeRTOS.h"
+#include "main.h"
+#include "Peripherals/can_bus.h"
+#include "Peripherals/bms_summary_config.h"
+#include "event_groups.h"
+#include "queue.h"
+#include "task.h"
+
+#define NUM_TASKS              7U
+#define AMS_CYCLE_PRIO         16U
+#define IWDG_PRIO              16U
+#define CAN_PRIO               10U
+#define BMS_CONFIG_PRIO         8U
+#define BMS_SUMMARY_PRIO        4U
+#define UART_BROADCAST_PRIO     3U
+#define STATUS_LED_PRIO         2U
+
+#define CAN_QUEUE_LENGTH       16U
+#define CAN_RX_QUEUE_LENGTH    16U
+#define LOG_MSG_MAX_LEN        128U
+#define LOG_QUEUE_LENGTH       64U
+#define KILOBYTE               256U
+#define AMS_FIRMWARE_VERSION   "ams-f405-custom-bms-0.3.0"
+#define AMS_TARGET_MCU         "STM32F405RGT6"
+
+typedef enum {
+    LOG_SERIAL,
+    LOG_NONE
+} log_level_t;
+
+typedef struct {
+    const char *name;
+    TaskHandle_t handle;
+} task_entry_t;
+
+typedef struct app_data_s {
+    task_entry_t task_entries[NUM_TASKS];
+    log_level_t log_level;
+    can_bus_t can_bus;
+    EventGroupHandle_t watchdog_events;
+    volatile ams_state_t ams_state;
+    volatile uint32_t active_faults;
+    volatile uint32_t latched_faults;
+    volatile uint8_t discharge_enable_request;
+    volatile uint8_t charge_enable_request;
+    volatile uint8_t fan_enable_request;
+    volatile uint8_t fault_clear_requested;
+    volatile uint16_t soc_permille;
+    volatile int32_t pack_voltage_mv;
+    volatile int32_t pack_current_ma;
+    volatile uint16_t minimum_cell_mv;
+    volatile uint16_t maximum_cell_mv;
+    volatile int16_t maximum_temperature_dc;
+    volatile uint16_t valid_cell_count;
+    volatile uint16_t valid_temperature_count;
+    /* Most recent valid AFE sample (per-cell and GPIO voltages), kept for
+     * inspection; never cleared while a new sample is being read. */
+    ams_measurement_t last_measurement;
+    volatile uint8_t boot_healthy;
+    ams_config_t config;
+    bms_summary_config_t summary_config;
+    uint16_t initial_soc_permille;
+    volatile uint8_t afe_bringup_status;
+    volatile uint8_t afe_bringup_failed_step;
+    volatile uint8_t afe_verified_devices;
+    volatile uint8_t afe_bridge_device_config;
+    volatile uint32_t afe_bringup_attempts;
+    /* Bridge registers captured when bring-up failed after the bridge was
+     * awake (afe_bringup_failed_step >= BQ79600_STEP_STACK_WAKE). */
+    bq79600_comm_diag_t afe_comm_diag;
+    /* Bench balance test only (AMS_BALANCE_BENCH_TEST_CELL != 0): latest
+     * status read and the bq79600_bringup_status_t of that read. */
+    bq79616_balance_status_t balance_status;
+    volatile uint8_t balance_read_status;
+    volatile uint32_t balance_reads;
+    /* Runtime AFE reader counters; last_error is the most recent failure
+     * (bq79600_reader_error_t) and is not cleared by later good samples. */
+    volatile uint32_t afe_sample_counter;
+    volatile uint32_t afe_communication_errors;
+    volatile uint8_t afe_last_error;
+    ams_fault_record_t first_fault;
+} app_data_t;
+
+extern app_data_t app;
+void create_app(void);
+void serial_log(const char *fmt, ...);
+
+#endif /* APP_H */
