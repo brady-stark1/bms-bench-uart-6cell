@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EE 250 · BMS Voltage Monitor</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,-apple-system,sans-serif;background:#0b121b;color:#e7eff9}*{box-sizing:border-box}body{margin:0}main{max-width:1240px;margin:auto;padding:28px}h1{font-size:28px;letter-spacing:-.8px;margin:6px 0}h2{font-size:17px;margin:0 0 16px}p{line-height:1.5}.eyebrow{font:12px ui-monospace,monospace;letter-spacing:2px;color:#69d5be}.muted,small{color:#a6b6c9}.banner{margin:20px 0;padding:14px 18px;border:1px solid #49667a;background:#142331;border-radius:10px}.bad{color:#ffb9a8}.good{color:#77e0c2}.pill{display:inline-block;font:12px ui-monospace,monospace;border:1px solid #456077;border-radius:20px;padding:5px 10px;margin-right:8px}.status{display:flex;flex-wrap:wrap;gap:14px;margin:20px 0;font-size:14px}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0}.metric,.panel{background:#111e2c;border:1px solid #27394b;border-radius:12px;padding:18px}.metric strong{display:block;font:26px ui-monospace,monospace;margin-top:10px}.cells{display:grid;grid-template-columns:repeat(6,1fr);gap:10px}.cell{border:1px solid #386057;border-radius:10px;padding:16px;background:#14352f}.cell.active{outline:2px solid #ffb86b}.cell .v{font:23px ui-monospace,monospace;margin:14px 0 6px}.cell .delta{font:14px ui-monospace,monospace}.grid{display:grid;grid-template-columns:1.35fr 1fr;gap:16px;margin:18px 0}table{width:100%;border-collapse:collapse;font-size:13px}td,th{text-align:left;padding:10px 6px;border-bottom:1px solid #293b4d}th{color:#a6b6c9;font-weight:500}td.num{font-family:ui-monospace,monospace}svg{display:block;width:100%;height:220px}#events{max-height:310px;overflow:auto}.event{border-bottom:1px solid #293b4d;padding:12px 0;font-size:13px}.event strong{font-weight:600}.event small{display:block;margin-top:5px}details{margin-top:20px}summary{cursor:pointer;color:#a6b6c9}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.5}footer{color:#92a8bf;font-size:12px;line-height:1.6;margin:20px 0}#logpath{overflow-wrap:anywhere}@media(max-width:900px){.cells{grid-template-columns:repeat(3,1fr)}.grid{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,1fr)}}@media(max-width:480px){main{padding:16px}.cells{grid-template-columns:repeat(2,1fr)}h1{font-size:24px}}
+</style>
+</head>
+<body><main>
+<div class="eyebrow">EE 250 / FORMULA ELECTRIC</div>
+<h1>Six-cell voltage monitor</h1>
+<div class="muted">Resistor-ladder measurements · receive-only laptop telemetry</div>
+<div class="banner"><span class="pill" id="mode">CONNECTING</span><strong>Simulated voltage anomaly monitoring</strong><br><small>Demo/monitoring settings only — not BMS safety limits. A resistor ladder does not create a real battery fault.</small></div>
+<div id="browser-status" class="bad" role="status"></div>
+<div class="status" aria-live="polite"><span id="connection">Waiting for application…</span><span id="freshness"></span><span id="report-status"></span><span id="window"></span></div>
+<div id="source" class="muted"></div>
+<div class="metrics">
+<div class="metric"><small>Smoothed median</small><strong id="median">—</strong></div>
+<div class="metric"><small>Smoothed minimum</small><strong id="minimum">—</strong></div>
+<div class="metric"><small>Smoothed maximum</small><strong id="maximum">—</strong></div>
+<div class="metric"><small>Smoothed voltage spread</small><strong id="spread">—</strong></div>
+</div>
+<section class="panel"><h2>Six-cell heatmap · signed deviation from median</h2><div class="cells" id="cells"></div><p class="muted"><small>Blue = below median · green = near median · amber = above median. Color scale uses the configured positive threshold. An outline indicates an active simulated anomaly; color alone does not indicate an event.</small></p><div id="active" role="status"></div></section>
+<div class="grid">
+<section class="panel"><h2>Raw and smoothed measurements</h2><div class="muted" id="sample-time">No complete valid report received</div><table><thead><tr><th>Cell</th><th>Latest raw</th><th>Smoothed</th><th>Δ median</th></tr></thead><tbody id="readings"></tbody></table><p><small>Raw values reflect the incoming report (N/A includes missing inputs). Smoothed values and metrics are from the last complete valid report. Gaps reset the averaging window and pending detection runs.</small></p></section>
+<section class="panel"><h2>Recent simulated anomaly events</h2><div id="events">No events yet.</div></section>
+</div>
+<section class="panel"><h2>Smoothed voltage spread · recent valid reports</h2><svg id="chart" viewBox="0 0 1000 220" role="img" aria-label="Voltage spread over recent reports"><text x="20" y="110" fill="#a6b6c9">Waiting for samples…</text></svg><small id="history-label"></small></section>
+<details><summary>Monitoring configuration, data quality and CSV logs</summary><p id="quality"></p><p id="logpath"></p><pre id="settings"></pre></details>
+<footer>Local display only. No UART commands, CAN transmission, MQTT, or hardware-control interface.<br>CSV logs contain UTC reception and source timestamps. Demo and replay data are labeled in the display and every CSV row.</footer>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const fmt=(v,d=3)=>Number.isFinite(v)?v.toFixed(d):'N/A';
+const signed=v=>Number.isFinite(v)?`${v>=0?'+':''}${(v*1000).toFixed(1)} mV`:'N/A';
+for(let i=1;i<=6;i++){
+ $('cells').insertAdjacentHTML('beforeend',`<div class="cell" id="cell-${i}"><small>CELL ${i}</small><div class="v" id="voltage-${i}">—</div><div class="delta" id="delta-${i}">—</div></div>`);
+ $('readings').insertAdjacentHTML('beforeend',`<tr><td>${i}</td><td class="num" id="raw-${i}">N/A</td><td class="num" id="smooth-${i}">N/A</td><td class="num" id="dev-${i}">N/A</td></tr>`);
+}
+function render(s){
+ const latest=s.latest, uncertain=s.data_stale||s.report_status!=='valid report';
+ $('mode').textContent=s.mode==='serial'?'LIVE SERIAL':s.mode==='demo'?'DEMO · SIMULATED':'REPLAY · RECORDED';
+ $('connection').textContent=`Source: ${s.connection}`;
+ $('source').textContent=s.message;
+ $('freshness').textContent=`${s.data_stale?'STALE / WAITING':'Recent valid data'} · last valid ${s.last_valid_age_seconds===null?'never':s.last_valid_age_seconds.toFixed(1)+'s ago'}`;
+ $('freshness').className=s.data_stale?'bad':'good';
+ $('report-status').textContent=s.report_status;
+ $('window').textContent=`Average: ${latest?latest.window_samples:0}/${s.settings.moving_average_window} samples`;
+ for(const name of ['median','minimum','maximum'])$(name).textContent=latest?`${fmt(latest[name+'_v'])} V`:'—';
+ $('spread').textContent=latest?`${fmt(latest.spread_v*1000,1)} mV`:'—';
+ $('sample-time').textContent=latest?`${uncertain?'Last accepted (current report unavailable): ':'Accepted: '}${latest.timestamp}`:'No complete valid report received';
+ const scale=Math.max(s.settings.demo_monitoring.positive_deviation_threshold_v,0.001);
+ for(let i=1;i<=6;i++){
+  const smooth=latest?.smoothed_v[i-1], delta=latest?.deviations_v[i-1], active=s.active_events.some(e=>e.cell===i);
+  $('raw-'+i).textContent=fmt(s.raw_live_v[i-1])+' V';
+  $('smooth-'+i).textContent=fmt(smooth)+' V';
+  $('dev-'+i).textContent=signed(delta);
+  $('voltage-'+i).textContent=latest?fmt(smooth)+' V':'—';
+  $('delta-'+i).textContent=signed(delta);
+  const ratio=Math.min(1,Math.abs(delta||0)/scale), hue=(delta||0)<0?160+50*ratio:160-125*ratio;
+  $('cell-'+i).style.background=latest?`hsl(${hue} 42% 19%)`:'#172737';
+  $('cell-'+i).style.opacity=uncertain?'.6':'1';
+  $('cell-'+i).classList.toggle('active',active);
+ }
+ $('active').textContent=s.active_events.length?`${s.active_events.length} active simulated anomaly event(s)${uncertain?' · confirmation pending valid data':''}`:'No active simulated anomaly events';
+ $('active').className=s.active_events.length?'bad':'good';
+ $('events').replaceChildren();
+ if(!s.events.length)$('events').textContent='No events yet.';
+ for(const e of s.events){
+  const div=document.createElement('div');div.className='event';
+  const title=document.createElement('strong'); title.textContent=`${e.transition.toUpperCase()} · Cell ${e.cell} · ${e.kind.replaceAll('_',' ')}`;
+  const detail=document.createElement('small');detail.textContent=`Simulated voltage anomaly #${e.event_id} · ${signed(e.deviation_v)}`;
+  const time=document.createElement('small');time.textContent=e.timestamp;
+  div.append(title,detail,time);$('events').append(div);
+ }
+ const history=s.history, max=Math.max(.01,...history.map(p=>p.spread_v));
+ if(history.length){
+  const points=history.map((p,i)=>`${55+i*920/Math.max(history.length-1,1)},${180-p.spread_v/max*145}`).join(' ');
+  $('chart').innerHTML=`<line x1="55" y1="180" x2="975" y2="180" stroke="#40576e"/><text x="5" y="40" fill="#a6b6c9" font-size="13">${(max*1000).toFixed(0)}</text><text x="5" y="184" fill="#a6b6c9" font-size="13">0 mV</text><polyline points="${points}" fill="none" stroke="#69d5be" stroke-width="3"/><text x="55" y="210" fill="#a6b6c9" font-size="13">Earlier reports</text><text x="880" y="210" fill="#a6b6c9" font-size="13">Latest</text>`;
+ }
+ $('history-label').textContent=`${history.length} accepted reports shown; horizontal spacing is by report, not elapsed time. Gaps are excluded.`;
+ $('quality').textContent=`Accepted reports: ${latest?.sample_number||0} · Incomplete/out-of-order: ${s.dropped_reports} · Invalid reports: ${s.invalid_reports} · Malformed lines: ${s.malformed_lines}`;
+ $('logpath').textContent='CSV session directory: '+s.log_directory;
+ $('settings').textContent=JSON.stringify(s.settings,null,2);
+}
+async function poll(){
+ try{const response=await fetch('/api/state',{cache:'no-store'});if(!response.ok)throw Error(response.status);render(await response.json());$('browser-status').textContent='';}
+ catch(error){$('browser-status').textContent='Dashboard disconnected from the laptop application. Displayed values are historical; check the terminal.';$('freshness').textContent='STALE · dashboard connection lost';$('freshness').className='bad';}
+ finally{setTimeout(poll,500);}
+}
+poll();
+</script></body></html>

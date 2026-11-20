@@ -1,0 +1,2 @@
+# Only live serial mode needs this; demo/replay use Python's standard library.
+pyserial==3.5

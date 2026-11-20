@@ -1,0 +1,20 @@
+{
+  "settings_label": "Demo/monitoring settings only — not BMS safety limits",
+  "serial_port": "",
+  "moving_average_window": 5,
+  "frame_timeout_seconds": 2.5,
+  "stale_after_seconds": 3.5,
+  "reconnect_seconds": 2.0,
+  "demo_interval_seconds": 1.0,
+  "history_samples": 120,
+  "recent_events": 50,
+  "demo_monitoring": {
+    "positive_deviation_threshold_v": 0.050,
+    "positive_consecutive_samples": 3,
+    "growing_start_deviation_v": 0.015,
+    "growing_min_step_v": 0.002,
+    "growing_consecutive_samples": 4,
+    "clear_deviation_v": 0.010,
+    "clear_consecutive_samples": 3
+  }
+}
