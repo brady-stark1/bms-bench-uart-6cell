@@ -1,36 +1,21 @@
-# USC Formula SAE Custom BMS Firmware
+# Six-channel resistor-ladder voltage monitor
 
-STM32F405RG firmware targeting the USC Custom_BMS motherboard and BQ79616
-daughterboards.
+Standalone STM32F405RG bench firmware for the existing Custom_BMS motherboard,
+BQ79600 SPI bridge and **one BQ79616 daughterboard**. The ladder connects to
+the daughterboard's cell inputs, using the same interface as the original
+firmware. It is not configured for the STM32's own analog pins.
 
-## Implemented foundation
+The application wakes and addresses the chain, enables continuous conversion
+of cell inputs 1-6, reads the latest six results, validates their frames/CRC,
+and prints their voltages once per second. `cell[n]` is the voltage difference
+between adjacent ladder taps (VCn and VCn-1), not each tap's voltage to ground.
+The existing daughterboard wiring and BQ79616 input/power requirements still
+apply; reducing the firmware does not change them.
 
-- confirmed motherboard pin map and fail-safe GPIO reset states;
-- CAN 2.0 telemetry at 500 kbit/s;
-- runtime pack configuration for 1-8 segments, 6-12 cells and 1-4
-  temperatures per segment;
-- configurable voltage, temperature, charge-current and discharge-current
-  limits, capacity, current calibration and current polarity;
-- RAM-resident measurements and battery state;
-- coulomb-counted SOC, five configurable rested-voltage drift points, full
-  anchor, and an unconditional 0% anchor when any active cell is at or below
-  3.000 V;
-- separate charge, discharge and fan requests;
-- latched fault logic and first-fault capture;
-- CRC-checked, versioned internal-flash records for configuration and SOC;
-- complete early-boot BQ79600/BQ79616 forward bring-up: dual GPIO wake,
-  stack wake, write/read DLL synchronization, auto-addressing, top-of-stack
-  setup, CRC-checked address verification and bridge identity verification;
-- one configurable `0xNXX` CAN namespace, optional fast telemetry, and 0-16
-  runtime-configurable five-second summary frames controlled by the VCU;
-- TI-reference-tested BQ796xx command frame and CRC codec;
-- nonblocking SPI/DMA acquisition framework and host tests.
+## Serial output
 
-## UART diagnostic console
-
-USART1 on J5 (PA9 TX, PA10 RX) prints only cell voltages 1-6 at
-115200 8N1, using the original 1000 ms `vTaskDelayUntil` update schedule.
-Each report uses one consistent measurement snapshot and contains six lines:
+Connect the existing J5 USART1 TX (PA9) and ground to your serial adapter.
+Use **115200 baud, 8 data bits, no parity, 1 stop bit**.
 
 ```text
 cell[1]=3.700 V
@@ -41,48 +26,46 @@ cell[5]=3.700 V
 cell[6]=3.698 V
 ```
 
-Indices are 1-based across the pack. Cells without a valid sample print
-`cell[n]=N/A`. Reports omit other diagnostics, GPIO voltages, pack values and
-SOC. Transmission remains interrupt-driven at low priority. Acquisition,
-pack configuration and the critical AMS cycle keep their original behavior.
+Only these six lines are printed per report. Startup/read failures print
+`cell[n]=N/A` for all six channels and retry startup next cycle. Old readings
+are not reused after a failed read. Conversions run continuously; a blocking,
+timeout-bounded SPI read and UART write run on a 1000 ms absolute schedule.
+After an overrun, the next deadline starts a fresh one-second interval.
 
-## Safety status
+## What remains
 
-This firmware is not ready to energize the tractive system. The compile-time
-hardware-output gate remains disabled. BQ79616 measurement/protection register
-configuration and channel decoding are not yet connected to the acquisition
-framework, so the firmware intentionally reports an AFE communication fault
-and keeps charge/discharge outputs deasserted even after successful bring-up.
+- `Core/Src/main.c`: board clock, GPIO, SPI, UART and measurement/display loop.
+- `Core/Src/Voltage/`: BQ startup, cell configuration, SPI reads, CRC and decoding.
+- `Core/Src/voltage_display.c`: six-line formatting, including unavailable reads.
+- `Core/Inc/bench_config.h`: one device, six cells and the update period.
+- STM32 startup, HAL timebase, linker support and vendor HAL/CMSIS libraries.
 
-Do not enable AMS_HARDWARE_OUTPUTS_COMMISSIONED until the items in
-docs/HARDWARE_CONTRACT.md have bench-test evidence.
+CAN, SOC, battery/charge/fan control, balancing, current/temperature sensing,
+flash configuration storage, watchdog supervision and FreeRTOS have been
+removed. The old board's control outputs are held low at initialization.
+This project is a bench voltage monitor, with no battery protection/control.
+The original application remains in Git history.
 
-## Build
+## Build and test
 
-From PowerShell, run tools/build.ps1 for Debug or Release.
+With Python 3 and Arm GNU tools on PATH:
 
-The final 128 KiB flash sector is excluded from the application image and
-reserved for the configuration/SOC journal.
+```sh
+python3 tools/build.py --configuration Debug
+python3 tools/build.py --configuration Release
+python3 tools/test-host.py
+```
 
-## Configuration required before vehicle testing
+Use `--toolchain-bin "/path/to/arm/tools/bin"` when the compiler is not on
+PATH (including the tools bundled with STM32CubeIDE). On Windows, use
+`python` or the `tools/build.ps1` and `tools/test-host.ps1` wrappers.
+Host tests need a native C compiler; set `CC` if necessary.
 
-The values in `Core/Src/Ams/ams_config.c` are safe software defaults, not an
-approved accumulator configuration. Confirm and update the segment/channel
-counts, cell voltage and temperature limits, charge/discharge current limits,
-pack capacity, installed current-sensor channel/polarity/zero/gain, persistence
-times, measurement timeout, rested-current threshold, rest time, initial SOC
-policy and all five voltage/SOC drift points before vehicle testing. The
-3.000 V empty-SOC anchor is a project requirement; the other default drift
-points are placeholders and must be replaced with the selected cell's tested
-rested OCV curve.
+Build outputs are `.build/Debug/bms_fsae.{elf,hex,bin}` and the equivalent
+Release directory. STM32CubeIDE project files are retained for importing and
+building. Peripheral setup is maintained directly in C; the former CubeMX
+`.ioc` configuration was removed because it generated the old BMS/RTOS setup.
 
-For CAN output, `CAN_BMS_BASE_ID` selects one aligned `0xNXX` namespace and
-`CAN_BMS_ENABLED_MESSAGES` controls optional fast diagnostics. The VCU serial
-console configures the number and field order of five-second summaries through
-staged CAN transactions. The default remains the two legacy summary frames.
-Select a namespace that does not collide with the vehicle DBC and see
-`docs/CAN_PROTOCOL.md` for every ID, command, and byte definition.
-
-The flash-record schema is version 4 so it can store the summary layout.
-Version 3 AMS calibration and SOC records remain readable and use the default
-two-frame layout until a version 4 record is saved.
+Host tests cover frame CRC, six-channel ordering, millivolt conversion,
+invalid/missing readings and serial formatting bounds. Builds and host tests
+do not establish hardware measurement accuracy; verify readings on the ladder.

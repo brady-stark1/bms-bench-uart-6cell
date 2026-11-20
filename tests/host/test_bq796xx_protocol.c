@@ -1,7 +1,7 @@
 #include <assert.h>
 #include <string.h>
 
-#include "Ams/bq796xx_protocol.h"
+#include "Voltage/bq796xx_protocol.h"
 
 static void test_ti_reference_frames(void)
 {
