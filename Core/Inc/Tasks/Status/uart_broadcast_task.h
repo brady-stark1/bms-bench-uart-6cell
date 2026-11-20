@@ -5,15 +5,15 @@
 
 #define UART_BROADCAST_STACK_SIZE    (2U * KILOBYTE)
 #define UART_BROADCAST_PERIOD_MS     1000U
-/* A full 8 x 12 cell report is about 2.3 KB, roughly 200 ms at 115200. */
-#define UART_BROADCAST_BUFFER_BYTES  3072U
+#define UART_BROADCAST_CELL_COUNT    6U
+/* Six signed 32-bit millivolt values fit within 192 bytes. */
+#define UART_BROADCAST_BUFFER_BYTES  192U
 #define UART_BROADCAST_TX_TIMEOUT_MS 1000U
 
-/* Periodically prints AFE bring-up/runtime status, AMS state and every
- * valid cell and GPIO voltage on USART1 (J5, 115200 8N1) as key=value lines.
- * cell[n] is 1-based across the pack: segment s, cell c is
- * n = (s - 1) * cells_per_segment + c. Diagnostic only; it never blocks the
- * critical task and is not part of the watchdog-proven path. */
+/* Prints only cell voltages 1-6 once per second on USART1 (J5, 115200
+ * 8N1). Indices are 1-based across the pack; unavailable cells print N/A.
+ * Diagnostic only; it never blocks the critical task and is not part of
+ * the watchdog-proven path. */
 void uart_broadcast_task(void *argument);
 task_entry_t create_uart_broadcast_task(app_data_t *data);
 

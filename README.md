@@ -28,12 +28,23 @@ daughterboards.
 
 ## UART diagnostic console
 
-USART1 on J5 (PA9 TX, PA10 RX) prints a status report once per second at
-115200 8N1: AFE bring-up status and failed step, verified segments, bridge
-DEVICE_CONFIG, AFE sample/error counters and last reader error, AMS state,
-fault masks, and every valid `cell[n]` and `gpio[n]` voltage (1-based across
-the pack), pack voltage/current and SOC. It is transmit-only, interrupt-driven
-and runs at low priority, so it never delays the critical task.
+USART1 on J5 (PA9 TX, PA10 RX) prints only cell voltages 1-6 at
+115200 8N1, using the original 1000 ms `vTaskDelayUntil` update schedule.
+Each report uses one consistent measurement snapshot and contains six lines:
+
+```text
+cell[1]=3.700 V
+cell[2]=3.701 V
+cell[3]=3.699 V
+cell[4]=3.702 V
+cell[5]=3.700 V
+cell[6]=3.698 V
+```
+
+Indices are 1-based across the pack. Cells without a valid sample print
+`cell[n]=N/A`. Reports omit other diagnostics, GPIO voltages, pack values and
+SOC. Transmission remains interrupt-driven at low priority. Acquisition,
+pack configuration and the critical AMS cycle keep their original behavior.
 
 ## Safety status
 
